@@ -1,0 +1,6 @@
+# 插件安装后默认停用，在桌面插件配置中填写本机配置并启用。
+- insert:
+    - id: dingtalk-bridge
+      name: dingtalk-dsh
+      config:
+        enabled: false

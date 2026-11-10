@@ -1,0 +1,8 @@
+# 桌面插件可在插件详情页配置。此处仅示例普通字段，密钥由 DSH 凭证库保存。
+- id: dingtalk-bridge
+  config:
+    enabled: false
+    clientId: '<钉钉应用的 Client ID>'
+    dataDir: ''
+    workspace: ''
+    runTimeoutSeconds: 300
