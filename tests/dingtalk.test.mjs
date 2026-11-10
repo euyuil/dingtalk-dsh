@@ -4,6 +4,20 @@ import { DingTalk } from '../dist/dingtalk.js';
 import { parseMessage } from '../dist/messages.js';
 import { config, incoming } from './helpers.mjs';
 
+test('普通消息和多行编号列表按原文进入同一聊天的会话', () => {
+  const { webhook, expiresAt } = incoming();
+  const parse = (content, msgId) => parseMessage(JSON.stringify({
+    conversationId: 'chat', conversationType: '1', msgId, msgtype: 'text', text: { content },
+    sessionWebhook: webhook, sessionWebhookExpiredTime: expiresAt,
+  }), msgId, 'example');
+  const plain = parse('你好', 'plain');
+  const numbered = parse('1. 第一项\n2. 第二项', 'numbered');
+  assert.equal(plain.prompt, '你好');
+  assert.equal(numbered.prompt, '1. 第一项\n2. 第二项');
+  assert.equal(plain.chatKey, numbered.chatKey);
+  assert.notEqual(plain.key, numbered.key);
+});
+
 test('仅包含文字的富文本保留片段顺序、空格和换行', () => {
   const { webhook, expiresAt } = incoming();
   const data = {
@@ -53,6 +67,7 @@ test('钉钉按正文选择消息格式和标题，并保留原文', async (t) =
   const channel = new DingTalk(config(), () => undefined, () => undefined);
   const plain = ['你好', '第一段\n\n第二段', '链接 https://example.com', '星号 \\*\\*原样\\*\\*'];
   const formatted = [
+    ['1. 第一项\n2. 第二项', '第一项'],
     ['请看 **第二项**\n明天继续', '请看 第二项'],
     ['下面是今天的汇报。\n\n## 处理**进度**\n\n- 已完成', '下面是今天的汇报。'],
     ['## 处理进度\n\n- 已完成', '处理进度'],

@@ -44,3 +44,23 @@ jobs:
           npm run check
           npm test
           npm run pack:plugin
+      - name: Check the release archive
+        if: hashFiles('package-lock.json') != ''
+        id: archive
+        shell: pwsh
+        run: |
+          $package = ./scripts/check-release-archive.ps1
+          "archive=$($package.Archive)" >> $env:GITHUB_OUTPUT
+          "checksum=$($package.Checksum)" >> $env:GITHUB_OUTPUT
+          Write-Output "Archive SHA-256: $($package.Sha256)"
+      - name: Upload the candidate from main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.archive.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.archive.outputs.archive }}
+            ${{ steps.archive.outputs.checksum }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
