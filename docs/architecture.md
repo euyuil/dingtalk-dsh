@@ -47,7 +47,7 @@ The CLI adapter shuts down its SDK subprocess on timeout. In desktop mode, the d
 
 ## Verification and Interfaces
 
-See [Repository Guidelines](../AGENTS.md) for development commands and the test suite. When verifying against a real DingTalk application, check replies in private and group chats, separate session context across chats, the desktop approval flow, and session recovery after restart.
+See [Repository Guidelines](../AGENTS.md) for development commands and the test suite, and the [release process](releasing.md) for the automated Desktop Host smoke.
 
 - [DingTalk Stream SDK](https://github.com/open-dingtalk/dingtalk-stream-sdk-nodejs)
 - [DSH SDK client](https://github.com/deepseek-ai/deepseek-harness/tree/master/packages/sdk/client)

@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish after the automated checks pass
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: Desktop release smoke
+    if: github.repository == 'euyuil/dingtalk-dsh' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run-id: ${{ steps.candidate.outputs.run-id }}
+      artifact: ${{ steps.candidate.outputs.artifact }}
+      sha256: ${{ steps.smoke.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Select the candidate from a passing main CI run
+        id: candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $result = gh api --method GET "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" `
+            -f "head_sha=$env:GITHUB_SHA" -f 'branch=main' -f 'event=push' -f 'status=completed' -F 'per_page=100' | ConvertFrom-Json
+          $run = $result.workflow_runs | Where-Object {
+            $_.head_sha -ceq $env:GITHUB_SHA -and $_.head_branch -ceq 'main' -and
+            $_.event -ceq 'push' -and $_.conclusion -ceq 'success'
+          } | Select-Object -First 1
+          if (!$run) { throw 'This main commit needs a passing CI push run.' }
+          $prefix = "release-$($run.head_sha)-"
+          $names = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($run.id)/artifacts?per_page=100" `
+            --paginate --jq '.artifacts[] | select(.expired == false) | .name'
+          $artifact = $names | Where-Object { $_ -cmatch ('^' + [regex]::Escape($prefix) + '[1-9][0-9]*$') } |
+            Sort-Object { [int]$_.Substring($prefix.Length) } -Descending | Select-Object -First 1
+          if (!$artifact) { throw 'The passing CI run has no retained candidate. Rerun all CI jobs for this commit.' }
+          "run-id=$($run.id)" >> $env:GITHUB_OUTPUT
+          "artifact=$artifact" >> $env:GITHUB_OUTPUT
+          Write-Output "Using $artifact from $($run.html_url)."
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ steps.candidate.outputs.artifact }}
+          run-id: ${{ steps.candidate.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/candidate
+      - name: Install and load the package in DSH Desktop
+        id: smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $package = ./scripts/check-release-archive.ps1 -Directory (Join-Path $env:RUNNER_TEMP 'candidate') -VerifyChecksum
+          $desktop = ./scripts/prepare-desktop-runtime.ps1 -Directory (Join-Path $env:RUNNER_TEMP 'desktop-runtime')
+          node scripts/smoke-desktop.mjs $desktop $package.Archive $package.Version
+          "sha256=$($package.Sha256)" >> $env:GITHUB_OUTPUT
+          "DSH Desktop smoke passed for **$($package.Version)**. Archive SHA-256: $($package.Sha256)" >> $env:GITHUB_STEP_SUMMARY
+
+  publish:
+    name: Publish verified archive
+    if: inputs.publish
+    needs: desktop
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.desktop.outputs.artifact }}
+          run-id: ${{ needs.desktop.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/candidate
+      - name: Publish and verify the public downloads
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SMOKE_SHA256: ${{ needs.desktop.outputs.sha256 }}
+        run: ./scripts/publish-release.ps1 -Directory (Join-Path $env:RUNNER_TEMP 'candidate') -ExpectedSha256 $env:SMOKE_SHA256
